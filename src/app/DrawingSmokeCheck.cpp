@@ -8,7 +8,7 @@ bool MainComponent::runDrawingSmokeCheck(const juce::File& directory) {
     struct Case { std::size_t length; int width, height; const char* image; };
     for (const auto test : { Case { 1024, 960, 640, "drawing-1024.png" },
                             Case { 2048, 960, 640, "drawing-2048.png" },
-                            Case { 2048, 640, 420, "drawing-small.png" } }) {
+                            Case { 2048, 640, 480, "drawing-small.png" } }) {
         editor_ = EditorModel(test.length);
         setSize(test.width, test.height);
         syncControls();

@@ -30,7 +30,7 @@ private:
             content_ = new MainComponent();
             setContentOwned(content_, true);
             setResizable(true, false);
-            setResizeLimits(640, 420, 2560, 1600);
+            setResizeLimits(640, 480, 2560, 1600);
             centreWithSize(getWidth(), getHeight());
             setVisible(visible);
         }
@@ -47,7 +47,8 @@ private:
                 stream->truncate();
                 if (!juce::PNGImageFormat().writeImageToStream(image, *stream)) return false;
             }
-            return content_->runDrawingSmokeCheck(directory);
+            return content_->runDrawingSmokeCheck(directory) && content_->runSmoothingSmokeCheck(directory)
+                && content_->runRegionalSmoothingSmokeCheck(directory) && content_->runEdgeSmoothingSmokeCheck(directory) && content_->runJitterSmokeCheck(directory);
         }
     private:
         MainComponent* content_ = nullptr; // Owned by DocumentWindow.

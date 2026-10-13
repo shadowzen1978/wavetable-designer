@@ -1,6 +1,6 @@
 # Wavetable Designer: implementation plan
 
-Status: C++20 with native JUCE selected; scaffold and freehand drawing implemented on
+Status: C++20 with native JUCE selected; scaffold, freehand drawing and smoothing implemented on
 feat/wavetable-designer-scaffold. Windows/macOS, lengths, preview and persistence
 are agreed. Export profiles below are the implementation defaults for compatibility.
 Date: 2026-10-13.
@@ -89,8 +89,8 @@ Drawing maps horizontal position to a sample index and vertical position to an
 amplitude. Interpolate across indices skipped between pointer events; clamp at the
 canvas edges. Repeated positions overwrite their sample rather than adding points.
 Backward strokes are valid. One stroke is one undo action. At 2048 samples, many
-samples share screen pixels, so interpolated drawing is essential; magnified sample
-editing can be deferred.
+samples share screen pixels, so interpolated drawing is essential. Horizontal zoom
+and Sample view provide precise index selection and drawing without changing data.
 
 Smoothing operates periodically: neighbors at the right edge wrap to the left edge.
 Proposed initial method is a circular low-pass convolution with a bounded slider
@@ -192,7 +192,8 @@ The build tools were found through the host's mise installation. Explicit mise
 execution resolves the session's unactivated PATH. Native dependencies are fetched
 into ignored build trees; clean users do not require sister repositories.
 The current branch is feat/wavetable-designer-scaffold. Initial scaffold/layout
-commit: 2bd9da8. Subsequent drawing work is a separate uncommitted change.
+commit: 2bd9da8. Drawing was user-validated and committed as c8ed303. Whole-cycle and selected-region smoothing
+are subsequent user-approved changes included in the editor commit milestone below.
 
 ## C++ layout
 
@@ -230,7 +231,7 @@ presets prevent toggling one CMake cache between incompatible configurations.
    launchable dark/light window, waveform view with starting shapes, and core target.
    Verified: native configure/build, core contract tests, hidden app startup, and
    visual inspection of dark/light snapshots. macOS native validation is outstanding.
-4. Drawing/model/undo/presets implemented; periodic smoothing remains next.
+4. Drawing/model/undo/presets and periodic smoothing implemented.
    Completion: skipped/reversed strokes and boundary smoothing are verified;
    slider adjustments do not accumulate and undo restores exact prior samples.
 5. Implement export and project save/open.
@@ -287,5 +288,253 @@ handlers at 1024/2048 samples and 640x420 minimum size; default/minimum snapshot
 were visually inspected. These synthetic handler checks do not claim physical
 mouse/device testing or native macOS validation.
 
-Next: periodic smoothing with non-cumulative slider previews. Persistence/export
-and audio preview follow according to the milestones.
+## Smoothing implementation and validation (2026-10-13)
+
+Drawing was confirmed working by the user and committed as c8ed303 before this
+stage. Added a collapsible Smooth panel above the canvas. The original curve is
+shown faintly behind the preview. Other sample edits are paused until Apply or
+Cancel; Enter applies, and Escape or Undo cancels. Minimum window size is now
+640x480 to accommodate the expanded controls while retaining a useful canvas.
+
+The numerical operation is a positive, normalized circular Gaussian convolution
+blended with the original by strength a in [0,1]. For the supported lengths, maximum
+sigma is N/32 (32 samples at 1024, 64 at 2048); larger custom/headless cycles cap it
+at 64. Sigma = 0.5 + a^2 * (maximumSigma - 0.5). The kernel extends to ceil(4*sigma)
+on either side. Output = (1-a)*source + a*convolution(source). Zero strength returns
+an exact copy. The positive normalized kernel preserves DC and stays within the
+input amplitude range; peaks may decrease and are never renormalized.
+
+Every preview reads the captured original State; previews do not accumulate.
+Apply adds one snapshot to the bounded undo history, and Cancel restores source
+samples/preset identity. Cancel and no-op Apply preserve the redo branch. A pending
+preview cannot be mixed with drawing, preset replacement or length changes.
+
+Windows validation: the core suite passed periodic seam symmetry, cyclic-shift
+equivalence, constants/DC/bounds, reduction of rapid variation, matching phase
+width at 1024/2048, invalid inputs, stable repeated previews, and exact history
+behavior. GUI checks passed preview controls, Apply/Cancel, Enter/Escape/Undo,
+blocking other edits, and re-enabling them afterward. Both themes were visually
+inspected, including 640x480. macOS native validation remains outstanding.
+
+The review app uses build/app-smoothing-windows, leaving the existing live drawing
+session intact. tools/dev.py supports --build-dir for isolated app/core review
+caches and reuses locally fetched sources when available. The standard product
+build remains self-contained through pinned FetchContent declarations.
+
+## Selected-region smoothing refinement (2026-10-13)
+
+User feedback identified an uneven sloping section bounded by intentional sharp
+jumps. Added selection smoothing to preserve those jumps while cleaning up the
+section, alongside the existing whole-cycle operation.
+
+The initial refinement exposed Select region as a canvas tool and Shift-drag shortcut
+(superseded by the contextual controls below). Horizontal
+drags select inclusive nearest-sample endpoints regardless of vertical position,
+in either direction, with boundary clipping. Selection shading and endpoint dots
+show the region. Clear selection removes it. Selection gestures never change
+samples or create waveform undo actions; Escape/Undo during a gesture restores the
+prior range. The region is retained in edit snapshots and remapped on length changes.
+Selections are one contiguous interval and do not currently span the phase seam.
+
+Smooth defaults to Selected region when a range exists, otherwise Whole cycle.
+The preview target menu can switch scopes while always reading the captured source.
+The initial refinement paused range changes during preview (superseded below).
+Apply/Cancel retain the existing single
+undo/non-cumulative behavior. Missing or tiny selections never silently fall back
+to smoothing the entire cycle; fewer than three samples is a no-op.
+
+Regional smoothing fixes both endpoint samples and copies every outside sample
+unchanged. Subtract the straight line joining the selected endpoints, smooth the
+residual using a Gaussian kernel sized to the selected interval, then add the
+trend back. The residual is zero beyond the interval; no outside waveform values
+are read. Float-quantized straight slopes within two float epsilons are returned
+unchanged. This prevents hard boundary jumps from bleeding into the selection.
+The result remains finite and amplitude-bounded; it does not normalize peaks or
+force cycle endpoint equality. Whole-cycle smoothing retains its DC-preserving
+property; regional endpoint anchoring does not enforce a global DC constraint.
+
+Windows checks passed: unchanged endpoints/outside samples and jump sizes,
+no cross-boundary influence, removal of alternating noise on a slope, straight-line
+and tiny-range no-ops, selection clipping/validation, selection history, stable
+scope switching, and the full drawing/smoothing regression suite. Hidden native
+handler checks passed checkbox/Shift-drag selection, reverse drags, cancellation,
+Undo during a selection gesture, scope changes, Apply/undo/redo and Clear selection.
+Dark/light snapshots were visually inspected at both sample lengths and 640x480.
+Native macOS verification remains outstanding.
+
+Review build: build/app-regional-smoothing-windows. Existing app sessions are not
+closed during this build. No new commit was made for this feedback refinement.
+
+Next: versioned project save/open and WAV/raw export, followed by audio preview.
+
+## Contextual selection and horizontal zoom (2026-10-13)
+
+User feedback moved region selection into Smooth rather than the regular drawing
+toolbar. The initial target menu (superseded by the checkbox below) exposed
+Select region only after opening Smooth.
+The canvas remains interactive for selecting/panning but blocks waveform drawing
+until Apply or Cancel. A nearest-sample vertical guide and zero-based index label
+follow the cursor. The shaded interval has draggable vertical boundary handles;
+either endpoint can be moved and is clamped to the other endpoint if crossed.
+
+Range creation/adjustment immediately recomputes from the captured waveform,
+never from the displayed preview. No range shows the exact source while waiting
+for a drag. Apply/Enter requires at least three selected samples; an empty range
+cannot silently apply whole-cycle smoothing. Clear selection starts a fresh range.
+Escape/Undo during a gesture restores the previous range and preview. Outside a
+gesture, Escape/Undo cancels the transaction, restoring the source and pre-preview
+selection. Apply is still one waveform undo action with before/after metadata.
+
+A JUCE-free HorizontalViewport provides a shared phase transform for rendering,
+drawing, region creation, handles and hover guides. The header offers Whole cycle,
+2x–64x, and Sample view. Zooming from the complete cycle centers on a selection
+when present; subsequent zoom changes preserve the viewport center. The native
+horizontal scrollbar navigates within phase [0,1]. Sample view shows sample grid
+lines/points at a minimum of 12 pixels per sample and adapts to window/length
+changes. Drags beyond the plot clamp to visible bounds. Panning and zooming are
+view changes only: no resampling, waveform history, or export changes.
+
+Review build: build/app-selection-zoom-windows. Existing native sessions remain
+open. Windows verification passed 34 core cases with 48,387 assertions covering
+the source transaction, selection history and viewport coordinate round trips.
+The hidden native handler suite passed contextual selection, hover guides,
+reverse creation, both boundary drags, crossing clamps, gesture cancellation,
+missing-range Apply protection, real scrollbar callbacks, exact one-sample
+adjustment/drawing, zoomed edge clipping, length/undo adaptation and existing
+drawing/smoothing regressions at 1024/2048 and 640x480. Dark/light full-cycle and
+sample-view snapshots were visually inspected. git diff --check passed.
+Native macOS validation remains outstanding. These changes were reviewed before the editor commit milestone below.
+
+## Scope checkbox and angle-based edge preservation (2026-10-13)
+
+The previous refinement replaces the smoothing target dropdown with a Select
+region checkbox. Checked selects region smoothing; unchecked selects whole-cycle
+smoothing. Existing adjustable ranges, cursor guides and zoom remain available.
+Preserve edges is a second checkbox inside Smooth, initially off. When enabled,
+an Edge angle slider initially appeared alongside Smoothness (rearranged below): 1–180 degrees, default 30.
+Apply/Cancel replace Clear/Smooth in the toolbar during preview, keeping the canvas
+height unchanged even at 640x480.
+
+Define a corner by absolute direction change between fitted incoming and outgoing
+tangents in normalized geometry: x = phase, y = amplitude/2. A straight line has
+zero turn regardless of its steepness. Least-squares fits cover N/128 samples on
+each side (8 at 1024, 16 at 2048; clipped at selection endpoints). This reduces
+sensitivity to individual sample wiggles and keeps the definition independent of
+viewport size/zoom and approximately consistent between cycle lengths. Very small
+features can be smoothed; the threshold controls sensitivity. The test includes
+a known 30-degree turn that is retained at 25 and rounded at 35 for both lengths.
+
+Samples above the angle threshold become fixed anchors. Smooth each interval's
+residual from its endpoint-to-endpoint line, using the existing anchored Gaussian
+method. This keeps the detected points exact and avoids averaging across sharp
+boundaries, rather than only restoring individual points after a global filter.
+Whole-cycle intervals wrap through the phase seam. With no detected edges, retain
+the original circular smoothing behavior. In a selected range, both the fit and
+smoothing stay entirely inside the selection, and its original endpoints/outside
+samples remain exact. Edge-preserving smoothing does not impose global DC
+preservation or normalization; ordinary circular smoothing still preserves DC.
+
+Checkbox/angle/strength/range changes always read the same captured source.
+Apply remains one undo action; Cancel restores source samples and pre-preview
+selection. Review build: build/app-preserve-edges-windows, leaving prior sessions
+open. Windows verification passed 41 core cases / 60,747 assertions, including
+standard-shape corners, both sides of step jumps, reduction of small alternating
+noise between edges, threshold sensitivity at both lengths, cyclic-shift/polarity
+invariance, selected-boundary isolation, invalid inputs/tiny cycles, and exact
+preview/apply/cancel history. Native smoke checks passed checkbox scope switching,
+conditional angle slider/default, repeated angle changes from the source, both
+scopes, Apply/undo/redo/Cancel and the existing drawing/selection/zoom regressions
+at 1024/2048 and 640x480. Both themes were visually inspected with edge preservation
+on/off and with/without a region. git diff --check passed. macOS native validation
+remains outstanding. These changes were reviewed before the editor commit milestone below.
+
+## Smoothing layout and optional jitter cleanup (2026-10-13)
+
+Latest user feedback places Edge angle on the same row as Preserve edges, moves
+selection indices beneath Select region, leaves that left area empty when unchecked,
+and places Smoothness to its right. Clear is a compact selection-context button
+beside the indices. Reduce jitter initially appeared only with Preserve edges
+(superseded by the independent option below). The canvas top is 252 during Smooth, a small adjustment
+from 244; enabling/disabling options does not change its height. Regular drawing
+layout remains unchanged.
+
+A likely source of the reported jagged remnants is the previous detector: every
+above-threshold sample became a fixed anchor, freezing whole neighborhoods around
+corners and creating tiny smoothing intervals. Optional Reduce jitter keeps the
+accepted default behavior available while introducing more selective detection.
+Require the same signed turn to exceed Edge angle at both N/128 and N/64 scales;
+keep local peaks of the coarse angle within the first window. Both sides of an
+isolated hard step are retained when their angles qualify (jump > 0.04 amplitude,
+more than eight times the neighboring differences). Selection endpoints always
+remain fixed. Neither detection step reads outside the selected range.
+
+Between anchors, try a constrained quadratic:
+y(t) = lerp(first, last, t) + A*t*(1-t), 0 <= t <= 1.
+Least squares determines A; curvature comparable to residual noise (|A| <= 4*RMS)
+uses the endpoint-to-endpoint straight line instead. Accept only when RMS error
+<= 0.02 amplitude, maximum error <= 0.04, and the fitted endpoint tangent turn
+<= Edge angle. Full Smoothness uses the accepted fit; otherwise blend from the
+original source by strength. Already-clean lines/quadratics within float tolerance
+remain exact no-ops. Complex or poorly matching spans use the original anchored
+Gaussian. With no whole-cycle corner anchors, circular Gaussian remains the default.
+
+This is a deliberately conservative first tolerance and an optional editing tool;
+small intentional detail within that tolerance can be removed. The original stays
+visible in preview, and Apply/Cancel preserve existing transaction behavior.
+A later refinement can expose fit tolerance if the user needs finer control.
+
+Polynomial smoothing is a useful reference for retaining simple curve geometry;
+[SciPy's primary Savitzky–Golay documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html)
+demonstrates preserving quadratic samples. This implementation uses a constrained
+fit across an eligible interval, rather than the standard sliding filter, and adds
+no SciPy/Python runtime dependency.
+
+Review build: build/app-jitter-cleanup-windows, preserving existing sessions.
+Core validation passed 47 cases / 75,137 assertions: straight ramps become lines,
+shallow curves retain curvature, zero/half/full strength, clean no-ops, Gaussian
+fallback, protected standard shapes/steps, selection isolation, cyclic shifts,
+tiny cycles, stable checkbox previews and exact undo/redo/cancel. Native checks
+passed option visibility and independence, strength/toggle replay from one source,
+whole/selected cleanup, blank inactive range controls, sample view/panning,
+Apply/undo/redo/Cancel and the full drawing/smoothing/selection regressions at both
+lengths and 640x480. Dark/light snapshots were visually inspected, including the
+aligned checkbox/slider rows, range layout and cleanup at individual sample scale.
+git diff --check passed. macOS native checks remain outstanding. These changes were reviewed before
+the editor commit milestone below.
+
+## Independent Reduce jitter option (2026-10-13)
+
+The user requested separating Reduce jitter from Preserve edges. It is now visible
+throughout the Smooth context and can be enabled alone or combined with edge
+preservation. Smoothness still controls the blend; region selection, Apply/Cancel
+and one-action history remain shared preview controls. The layout is unchanged.
+
+Standalone jitter cleanup attempts the conservative line/quadratic fit within the
+selected range or the authored sample interval 0..N-1 for Whole cycle. Accepted
+fits keep those original endpoints and use a fixed 30-degree gentle-turn guard.
+The hidden Edge angle value is irrelevant, including core validation of a disabled
+angle parameter. A poorly matching selected span falls back to anchored Gaussian;
+a poorly matching whole cycle falls back to circular Gaussian. Standalone cleanup
+does not detect or freeze interior corners. Enabling Preserve edges adds the
+existing fixed corner intervals and makes its angle setting govern the fit.
+A whole cycle with no detected corners can also attempt the gentle fit when
+jitter reduction is on.
+
+Review build: build/app-independent-jitter-windows. Existing sessions are preserved.
+Core and native checks cover standalone whole/selected fitting, all four checkbox
+combinations, independence from hidden angle settings, source-based previews and
+exact apply/history/cancel restoration. Windows core verification passed 49 cases /
+84,401 assertions. The native regression suite passed at 1024/2048 and 640x480;
+standalone jitter snapshots in both themes were visually inspected. git diff
+--check passed. macOS native verification remains outstanding. These changes were reviewed before
+the editor commit milestone below.
+
+## Editor commit milestone (2026-10-13)
+
+The user approved committing and pushing the reviewed editor changes on
+feat/wavetable-designer-scaffold. This milestone includes whole-cycle and regional
+smoothing, contextual adjustable ranges, sample-level zoom/panning, angle-based
+edge preservation, independent jitter cleanup, native regression checks, and
+isolated review builds that preserve unsaved sessions. Windows validation passed
+49 core cases / 84,401 assertions and the native GUI/theme suite; macOS validation
+remains outstanding. Generated build output and snapshots stay ignored.

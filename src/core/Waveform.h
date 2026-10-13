@@ -6,6 +6,17 @@
 
 namespace wtd {
 
+struct SampleRange {
+    std::size_t first, last; // Inclusive, ordered indices.
+    bool operator==(const SampleRange&) const = default;
+};
+
+struct SmoothingOptions {
+    bool preserveEdges = false;
+    double edgeAngleDegrees = 30.0;
+    bool reduceJitter = false; // Independent cleanup; may be combined with preserveEdges.
+};
+
 enum class Shape { sine, triangle, saw, square, flat };
 
 // N values at phase i/N. No duplicated endpoint; no framework dependencies.
@@ -20,6 +31,8 @@ public:
     void fill(Shape shape) noexcept;
     void drawSegment(std::size_t from, float fromAmplitude, std::size_t to, float toAmplitude);
     [[nodiscard]] Waveform resampled(std::size_t sampleCount) const;
+    [[nodiscard]] Waveform smoothed(double strength, SmoothingOptions options = {}) const;
+    [[nodiscard]] Waveform smoothedRegion(double strength, SampleRange range, SmoothingOptions options = {}) const;
     bool operator==(const Waveform&) const = default;
 
 private:

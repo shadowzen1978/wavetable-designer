@@ -51,6 +51,7 @@ def execute(args: list[str], env: dict[str, str], **kwargs) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("build", "build-core", "test", "run", "smoke"))
+    parser.add_argument("--build-dir", type=Path, help="Use a separate build folder under build/ for review without closing the current app")
     args = parser.parse_args()
     host = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}.get(platform.system())
     if host is None:
@@ -60,12 +61,28 @@ def main() -> None:
         parser.error("Linux currently supports only the portable core harness")
     preset = ("core-" if core_only else "app-") + host
     env = build_environment()
-    execute(["cmake", "--preset", preset], env)
-    execute(["cmake", "--build", "--preset", preset, "--parallel", "4"], env)
+    build_dir = (ROOT / args.build_dir).resolve() if args.build_dir else ROOT / "build" / preset
+    if args.build_dir and (not build_dir.is_relative_to(ROOT / "build") or build_dir == ROOT / "build"):
+        parser.error("Review build directories must be beneath the repository build/ folder")
+    cache = build_dir / "CMakeCache.txt"
+    if args.build_dir and cache.is_file():
+        mode = next((line.split("=", 1)[1] for line in cache.read_text().splitlines()
+                     if line.startswith("WTD_BUILD_APP:BOOL=")), None)
+        if mode is not None and (mode == "ON") == core_only:
+            parser.error("Use separate app/core review directories; this folder has the opposite build mode")
+    configure = ["cmake", "--preset", preset, "-B", str(build_dir)]
+    if args.build_dir:
+        # Reuse immutable fetched sources, keeping all compiled output/caches separate.
+        dependencies = ROOT / "build" / preset / "_deps"
+        for name, source in (("JUCE", "juce-src"), ("DOCTEST", "doctest-src")):
+            if (dependencies / source).is_dir():
+                configure.append(f"-DFETCHCONTENT_SOURCE_DIR_{name}={dependencies / source}")
+    execute(configure, env)
+    execute(["cmake", "--build", str(build_dir), "--parallel", "4"], env)
     if args.action == "test":
-        execute(["ctest", "--preset", preset], env)
+        execute(["ctest", "--test-dir", str(build_dir), "--output-on-failure"], env)
     if args.action in ("run", "smoke"):
-        artefacts = ROOT / "build" / preset / "WavetableDesigner_artefacts" / "Release"
+        artefacts = build_dir / "WavetableDesigner_artefacts" / "Release"
         executable = (artefacts / "Wavetable Designer.exe") if host == "windows" else (
             artefacts / "Wavetable Designer.app/Contents/MacOS/Wavetable Designer")
         if args.action == "smoke":

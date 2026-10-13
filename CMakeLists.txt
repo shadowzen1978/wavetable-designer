@@ -23,7 +23,7 @@ if(BUILD_TESTING)
         # doctest 2.4.11, pinned to its exact revision.
         GIT_TAG ae7a13539fb71f270b87eb2e874fbac80bc8dda2)
     FetchContent_MakeAvailable(doctest)
-    add_executable(wavetable_tests tests/WaveformTests.cpp tests/EditorModelTests.cpp)
+    add_executable(wavetable_tests tests/WaveformTests.cpp tests/EditorModelTests.cpp tests/SmoothingTests.cpp tests/RegionalSmoothingTests.cpp tests/HorizontalViewportTests.cpp tests/EdgeSmoothingTests.cpp tests/JitterTests.cpp)
     target_link_libraries(wavetable_tests PRIVATE wavetable_core doctest::doctest)
     add_test(NAME waveform_contract COMMAND wavetable_tests)
 endif()
@@ -42,6 +42,10 @@ if(WTD_BUILD_APP)
         src/app/Main.cpp
         src/app/MainComponent.cpp
         src/app/DrawingSmokeCheck.cpp
+        src/app/SmoothingSmokeCheck.cpp
+        src/app/RegionalSmoothingSmokeCheck.cpp
+        src/app/EdgeSmoothingSmokeCheck.cpp
+        src/app/JitterSmokeCheck.cpp
         src/app/WaveformView.cpp)
     target_compile_definitions(WavetableDesigner PRIVATE
         JUCE_WEB_BROWSER=0
