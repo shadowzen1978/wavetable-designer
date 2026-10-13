@@ -1,0 +1,157 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "inherits": "release-base",
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      }
+    },
+    {
+      "name": "app-windows",
+      "displayName": "app Release (windows)",
+      "inherits": "release-base",
+      "binaryDir": "${sourceDir}/build/app-windows",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "WTD_BUILD_APP": "ON"
+      }
+    },
+    {
+      "name": "core-windows",
+      "displayName": "core Release (windows)",
+      "inherits": "release-base",
+      "binaryDir": "${sourceDir}/build/core-windows",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "WTD_BUILD_APP": "OFF"
+      }
+    },
+    {
+      "name": "app-macos",
+      "displayName": "app Release (macos)",
+      "inherits": "macos-base",
+      "binaryDir": "${sourceDir}/build/app-macos",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "WTD_BUILD_APP": "ON"
+      }
+    },
+    {
+      "name": "core-macos",
+      "displayName": "core Release (macos)",
+      "inherits": "macos-base",
+      "binaryDir": "${sourceDir}/build/core-macos",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "WTD_BUILD_APP": "OFF"
+      }
+    },
+    {
+      "name": "core-linux",
+      "displayName": "core Release (linux)",
+      "inherits": "release-base",
+      "binaryDir": "${sourceDir}/build/core-linux",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "WTD_BUILD_APP": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "app-windows",
+      "configurePreset": "app-windows"
+    },
+    {
+      "name": "core-windows",
+      "configurePreset": "core-windows"
+    },
+    {
+      "name": "app-macos",
+      "configurePreset": "app-macos"
+    },
+    {
+      "name": "core-macos",
+      "configurePreset": "core-macos"
+    },
+    {
+      "name": "core-linux",
+      "configurePreset": "core-linux"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "app-windows",
+      "configurePreset": "app-windows",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "core-windows",
+      "configurePreset": "core-windows",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "app-macos",
+      "configurePreset": "app-macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "core-macos",
+      "configurePreset": "core-macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "core-linux",
+      "configurePreset": "core-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

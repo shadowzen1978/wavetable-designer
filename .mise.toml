@@ -1,0 +1,36 @@
+[tools]
+python = "3.12.13"
+uv = "0.11.16"
+cmake = "4.4.0"
+ninja = "1.13.2"
+
+[env]
+UV_PROJECT_ENVIRONMENT = "{% if os() == 'windows' %}.venv{% elif os() == 'macos' %}.venv-macos{% else %}.venv-linux{% endif %}"
+
+[tasks.setup]
+description = "Create the platform-specific Python tooling environment"
+run = "uv sync --locked"
+
+[tasks.build]
+description = "Configure and build the native desktop app and core tests"
+run = "python tools/dev.py build"
+
+[tasks.build-core]
+description = "Build only the JUCE-free waveform core and tests"
+run = "python tools/dev.py build-core"
+
+[tasks.test]
+description = "Build and test the JUCE-free core"
+run = "python tools/dev.py test"
+
+[tasks.run]
+description = "Build and launch Wavetable Designer"
+run = "python tools/dev.py run"
+
+[tasks.smoke]
+description = "Build and verify hidden app startup and theme snapshots"
+run = "python tools/dev.py smoke"
+
+[tasks.check-exports]
+description = "Inspect a WAV or raw file independently; pass a path and expected format"
+run = "uv run --locked python tools/check_export.py"
