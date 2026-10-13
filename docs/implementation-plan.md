@@ -1,6 +1,6 @@
 # Wavetable Designer: implementation plan
 
-Status: C++20 with native JUCE selected; scaffold completed on
+Status: C++20 with native JUCE selected; scaffold and freehand drawing implemented on
 feat/wavetable-designer-scaffold. Windows/macOS, lengths, preview and persistence
 are agreed. Export profiles below are the implementation defaults for compatibility.
 Date: 2026-10-13.
@@ -191,7 +191,8 @@ Verify preset schema/minimums and commands before copying reference config.
 The build tools were found through the host's mise installation. Explicit mise
 execution resolves the session's unactivated PATH. Native dependencies are fetched
 into ignored build trees; clean users do not require sister repositories.
-The current branch is feat/wavetable-designer-scaffold, with no commits yet.
+The current branch is feat/wavetable-designer-scaffold. Initial scaffold/layout
+commit: 2bd9da8. Subsequent drawing work is a separate uncommitted change.
 
 ## C++ layout
 
@@ -221,15 +222,15 @@ presets prevent toggling one CMake cache between incompatible configurations.
 ## Implementation sequence and completion criteria
 
 1. Completed: select native C++20/JUCE and establish export profiles.
-2. Completed: create feat/wavetable-designer-scaffold. Preserve
-   README content and existing work; no initial commit or push without instruction.
+2. Completed: create feat/wavetable-designer-scaffold and commit the initial
+   scaffold/layout at the user's request (2bd9da8). Preserve unrelated user work.
 3. Completed on Windows: set up selected tools/dependencies, pinned versions and
    ignores; establish
    build/test/run tasks and finalize AGENTS.md with actual commands. Scaffold a
    launchable dark/light window, waveform view with starting shapes, and core target.
    Verified: native configure/build, core contract tests, hidden app startup, and
    visual inspection of dark/light snapshots. macOS native validation is outstanding.
-4. Implement drawing/model/undo/presets and periodic smoothing.
+4. Drawing/model/undo/presets implemented; periodic smoothing remains next.
    Completion: skipped/reversed strokes and boundary smoothing are verified;
    slider adjustments do not accumulate and undo restores exact prior samples.
 5. Implement export and project save/open.
@@ -251,7 +252,7 @@ separate estimate once hardware/support targets are known.
 
 ## Scaffold validation (2026-10-13)
 
-- Branch: feat/wavetable-designer-scaffold; files are uncommitted.
+- Branch: feat/wavetable-designer-scaffold; scaffold/layout later committed as 2bd9da8.
 - Windows x64 MSVC configure/build completed using mise's pinned tools.
 - Core-only CTest passed; its dependency tree contains doctest only, with no JUCE.
 - Native JUCE app initialized and exited cleanly in smoke mode. Dark/light 960x640
@@ -263,5 +264,28 @@ separate estimate once hardware/support targets are known.
 - Native macOS build, application startup and device behavior are not yet tested.
 - Pinned doctest emits nonfatal legacy CMake/new-MSVC compatibility warnings.
 
-Next: drawing strokes with skipped-index interpolation, undo/redo, and periodic
-smoothing. Add persistence/export, then audio preview according to the milestones.
+## Drawing implementation and validation (2026-10-13)
+
+Implemented in the JUCE-free core and native canvas:
+- Each left-button gesture is one undo action. Sparse and reverse strokes linearly
+  interpolate all traversed indices. The latest visit to an index overwrites it.
+- Mapping selects the nearest sample at phase i/N and clamps phase/amplitude at the
+  canvas boundaries. Right-clicks and initial clicks in padding do not draw.
+- Escape cancels the pending gesture; keyboard focus loss commits it. Undo during
+  a gesture cancels that stroke without consuming older history.
+- Clear/flat and preset replacement are undoable; Custom identifies drawn curves.
+- Cycle-length changes use periodic linear interpolation, preserving the authored
+  curve rather than rebuilding a preset. These changes are also undoable.
+- Up to 128 snapshot actions are retained. New edits invalidate redo; cancelled
+  and no-op gestures preserve it. Save/open remains a future stage.
+
+Verification on Windows: the headless numerical suite passed for sparse/reverse
+strokes, repeated indices, endpoint clipping, exact undo/redo, cancelled/no-op
+strokes, invalid-input rejection, bounded history and periodic resampling. Hidden
+GUI checks exercised actual mouse handlers, control callbacks and keyboard command
+handlers at 1024/2048 samples and 640x420 minimum size; default/minimum snapshots
+were visually inspected. These synthetic handler checks do not claim physical
+mouse/device testing or native macOS validation.
+
+Next: periodic smoothing with non-cumulative slider previews. Persistence/export
+and audio preview follow according to the milestones.

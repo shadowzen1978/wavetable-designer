@@ -11,7 +11,7 @@ include(FetchContent)
 # The pinned doctest subproject predates CMake 4's minimum policy floor.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-add_library(wavetable_core STATIC src/core/Waveform.cpp)
+add_library(wavetable_core STATIC src/core/Waveform.cpp src/core/EditorModel.cpp)
 target_include_directories(wavetable_core PUBLIC src)
 target_compile_options(wavetable_core PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->
@@ -23,7 +23,7 @@ if(BUILD_TESTING)
         # doctest 2.4.11, pinned to its exact revision.
         GIT_TAG ae7a13539fb71f270b87eb2e874fbac80bc8dda2)
     FetchContent_MakeAvailable(doctest)
-    add_executable(wavetable_tests tests/WaveformTests.cpp)
+    add_executable(wavetable_tests tests/WaveformTests.cpp tests/EditorModelTests.cpp)
     target_link_libraries(wavetable_tests PRIVATE wavetable_core doctest::doctest)
     add_test(NAME waveform_contract COMMAND wavetable_tests)
 endif()
@@ -41,6 +41,7 @@ if(WTD_BUILD_APP)
     target_sources(WavetableDesigner PRIVATE
         src/app/Main.cpp
         src/app/MainComponent.cpp
+        src/app/DrawingSmokeCheck.cpp
         src/app/WaveformView.cpp)
     target_compile_definitions(WavetableDesigner PRIVATE
         JUCE_WEB_BROWSER=0

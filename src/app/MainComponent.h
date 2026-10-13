@@ -7,16 +7,18 @@ public:
     MainComponent();
     ~MainComponent() override;
     void setDarkTheme(bool dark);
+    bool runDrawingSmokeCheck(const juce::File& directory);
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress&) override;
 private:
     void applyTheme();
-    void updateWaveform();
+    void syncControls();
     juce::LookAndFeel_V4 lookAndFeel_;
-    Waveform waveform_;
-    WaveformView waveformView_ { waveform_ };
+    EditorModel editor_;
+    WaveformView waveformView_ { editor_ };
     juce::ComboBox shape_, length_;
-    juce::TextButton themeButton_;
+    juce::TextButton undo_ { "Undo" }, redo_ { "Redo" }, clear_ { "Clear" }, themeButton_;
     bool dark_ = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

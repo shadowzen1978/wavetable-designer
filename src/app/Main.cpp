@@ -47,7 +47,7 @@ private:
                 stream->truncate();
                 if (!juce::PNGImageFormat().writeImageToStream(image, *stream)) return false;
             }
-            return true;
+            return content_->runDrawingSmokeCheck(directory);
         }
     private:
         MainComponent* content_ = nullptr; // Owned by DocumentWindow.

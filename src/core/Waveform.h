@@ -6,7 +6,7 @@
 
 namespace wtd {
 
-enum class Shape { sine, triangle, saw, square };
+enum class Shape { sine, triangle, saw, square, flat };
 
 // N values at phase i/N. No duplicated endpoint; no framework dependencies.
 class Waveform {
@@ -18,6 +18,9 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return samples_.size(); }
     void setSample(std::size_t index, float amplitude);
     void fill(Shape shape) noexcept;
+    void drawSegment(std::size_t from, float fromAmplitude, std::size_t to, float toAmplitude);
+    [[nodiscard]] Waveform resampled(std::size_t sampleCount) const;
+    bool operator==(const Waveform&) const = default;
 
 private:
     std::vector<float> samples_;

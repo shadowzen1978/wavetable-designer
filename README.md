@@ -22,10 +22,25 @@ Light mode and dark mode themes are a must with the dark mode theme as a default
 
 ## Development
 
-The selected implementation is a native C++20/JUCE GUI application. The initial
-scaffold displays sine, triangle, saw and square cycles at 1024/2048 samples, with
-dark/light themes. Drawing, smoothing, export, project persistence and audio preview
-are the next implementation stages; they are not available in this scaffold.
+The implementation is a native C++20/JUCE GUI application with freehand drawing,
+undo/redo, sine/triangle/saw/square/flat starting shapes, and dark/light themes.
+Cycles contain 1024 or 2048 samples. Smoothing, export, project persistence and audio
+preview are upcoming stages.
+
+### Drawing
+
+Click and drag inside the waveform grid to draw. Dragging fills every sample
+between pointer events; dragging backward redraws that region. Drags outside the
+grid clamp to the edges. Release the button to finish one undoable stroke, or press
+Escape while drawing to cancel it.
+
+Undo uses Ctrl+Z on Windows or Cmd+Z on macOS. Redo uses Ctrl/Cmd+Shift+Z (also
+Ctrl+Y on Windows). Clear resets the cycle to silence. Selecting a starting shape
+replaces the curve. Clear and shape replacement are both undoable.
+
+Changing cycle length periodically resamples the current curve and can be undone.
+The dropdown displays Custom after hand drawing. History retains up to 128 actions;
+project save/open is still to come.
 
 The planned SZ404 export preset uses a complete 1024-sample mono PCM16 cycle;
 generic exports also support float32 WAV. See [the implementation plan](docs/implementation-plan.md)
@@ -57,5 +72,6 @@ mise run check-exports -- path/to/cycle.wav --samples 1024 --encoding pcm16 --ra
 ~~~
 
 The smoke command runs without opening a visible window, renders both themes to
-build/gui-smoke/, and exits. The export checker supports PCM16/float32 WAV and raw;
+build/gui-smoke/, exercises drawing/undo/resize handlers at both sample lengths and
+the minimum window size, and exits. The export checker supports PCM16/float32 WAV and raw;
 raw files have no sample-rate metadata, so omit --rate for them.

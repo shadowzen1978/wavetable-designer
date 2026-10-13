@@ -9,15 +9,18 @@ The selected language is C++20/JUCE; docs/language-options.md records alternativ
 SZ404 in ts404-remake is the priority export consumer. Browser mockups and a later
 browser version are expected; retain a portable core and a versioned data contract.
 
-The current phase is the initial scaffold: starter waveform display and themes.
-Drawing, smoothing, undo, persistence, export and audio preview are upcoming stages.
+The current phase is editor implementation. Freehand drawing, stroke undo/redo,
+Clear/presets and periodic length changes are implemented. Smoothing, persistence,
+export and audio preview are upcoming stages.
 The primary UI is the drawing box; dark is default and light is required.
 Place drawing and persistence controls above the canvas, and transport/export
 controls below it. Cycle length belongs with the bottom export controls.
 
 ## Layout and dependencies
 
-- src/core is JUCE-free C++: waveform data and numerical operations.
+- src/core is JUCE-free C++: Waveform holds sample data; EditorModel owns gestures,
+  preset identity, and bounded undo/redo snapshots. Length changes resample the
+  current curve; they must not regenerate a starting shape or discard edits.
 - src/app is the JUCE GUI/lifecycle; future audio and file adapters belong under
   src/audio and src/io when implemented. Do not add empty placeholder subsystems.
 - tests is the headless doctest suite; core-only configure must not fetch JUCE.
@@ -37,7 +40,8 @@ If a shell has not activated mise, these tasks still provide the selected tools.
 - mise run build-core: JUCE-free core and test binaries.
 - mise run test: build the core and run CTest.
 - mise run run: build and launch the native app.
-- mise run smoke: build and run hidden GUI initialization/theme snapshot checks.
+- mise run smoke: build and run hidden GUI initialization/theme snapshot checks
+  plus synthetic canvas gestures and undo/redo/clear/resize/shortcut verification.
   Snapshots are written under build/gui-smoke/ for visual inspection.
 - mise run check-exports -- <file> --samples 1024 --encoding pcm16 --rate 44100:
   independent mono WAV validation. Omit --rate for raw files.
@@ -48,7 +52,7 @@ but not yet run on a Mac; do not claim Windows validation verifies macOS behavio
 ## Working practices and contracts
 
 - Inspect git status first and preserve unrelated work. Do not commit or push unless
-  instructed. The scaffold branch was created before the first repository commit.
+  instructed. The initial scaffold/layout was committed as 2bd9da8.
 - Keep accepted decisions and milestone evidence under docs/. Update commands as
   implementation changes; do not treat historical language comparisons as gates.
 - Sister repos are tooling and compatibility references, not required dependencies.
