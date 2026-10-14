@@ -25,7 +25,7 @@ Light mode and dark mode themes are a must with the dark mode theme as a default
 The implementation is a native C++20/JUCE GUI application with freehand drawing,
 undo/redo, periodic smoothing, sine/triangle/saw/square/flat starting shapes, and
 dark/light themes and musical audio preview. Cycles contain 1024 or 2048 samples.
-Export and project persistence are upcoming stages.
+Versioned project save/open and WAV/raw export are implemented.
 
 ### Drawing
 
@@ -40,7 +40,7 @@ replaces the curve. Clear and shape replacement are both undoable.
 
 Changing cycle length periodically resamples the current curve and can be undone.
 The dropdown displays Custom after hand drawing. History retains up to 128 actions;
-project save/open is still to come.
+Save/Open retain authored samples in versioned .wtd projects.
 
 ### Smoothing
 
@@ -98,6 +98,29 @@ gentle-curve limit; the Edge angle slider applies when Preserve edges is enabled
 Small intentional wiggles within that tolerance may be cleaned up too; compare
 the preview before Apply. Cancel and Undo retain their exact restoration behavior.
 
+### Project files and export
+
+New, Open..., Save and Save as... sit above the canvas. Projects use .wtd files
+containing versioned JSON, with the exact authored samples, preset identity and
+selected range. An asterisk marks unsaved changes; undoing back to the saved
+state removes it. New/Open/Quit offer Save, Discard or Cancel when needed.
+Open resets history and zoom and stops playback. Save keeps current undo history.
+Apply or cancel a smoothing preview before file operations.
+
+Use Ctrl/Cmd+N for New, +O for Open, +S for Save, +Shift+S for Save As and +E for Export.
+Closing during smoothing first offers Apply, Discard preview or Cancel.
+
+Below the canvas, choose SZ404 or Generic, a WAV/raw encoding, and WAV header rate,
+then Export.... SZ404 produces a complete 1024-sample PCM16 copy, resampling a
+2048-sample drawing without changing it. Generic retains the authored count and
+supports PCM16/float32 in WAV or little-endian raw. Raw has no rate metadata.
+The footer states the actual sample count, encoding and conversion. Export excludes
+listening gain and monitor filtering and leaves the project unchanged.
+
+Theme, preview/output settings, zoom and export choices remain session-only.
+See [the file-format contract](docs/project-format.md) for the schema, byte formats,
+safe replacement behavior and compatibility checks.
+
 ### Audio preview
 
 Press Play below the canvas, or Space while the canvas has focus. The note menu
@@ -126,7 +149,7 @@ precise selection and drawing. The cursor guide identifies the nearest sample;
 indices start at zero. Zoom changes the view only, leaving samples and history intact.
 Choose Whole cycle to see the complete waveform again.
 
-The planned SZ404 export preset uses a complete 1024-sample mono PCM16 cycle;
+The SZ404 export profile uses a complete 1024-sample mono PCM16 cycle;
 generic exports also support float32 WAV. See [the implementation plan](docs/implementation-plan.md)
 and [compatibility findings](docs/language-options.md).
 
@@ -157,7 +180,7 @@ mise run check-exports -- path/to/cycle.wav --samples 1024 --encoding pcm16 --ra
 
 The smoke command disables physical audio, runs without opening a visible window, and renders both themes to
 build/gui-smoke/, exercises drawing/undo/resize handlers at both sample lengths and
-the minimum window size, verifies whole-cycle/regional smoothing, adjustable selection gestures, zoomed sample drawing, preview controls and offline audio/transport, and exits. The export checker supports PCM16/float32 WAV and raw;
+the minimum window size, verifies whole-cycle/regional smoothing, adjustable selection gestures, zoomed sample drawing, preview controls and offline audio/transport, project round trips, invalid-file/failed-write isolation and real exports, and exits. The export checker supports PCM16/float32 WAV and raw;
 raw files have no sample-rate metadata, so omit --rate for them.
 
 Use a separate review build folder to try changes while keeping an existing drawing
@@ -181,3 +204,13 @@ This plays a brief quiet A4 tone, checks output callbacks, and writes
 build/audio-check/device-check.json. It verifies driver callback operation, not
 a microphone/loopback recording or listening quality. Native macOS checks remain
 outstanding; the Windows review build is build/app-audio-preview-windows.
+
+After a smoke run, verify every generated export independently:
+
+~~~sh
+mise run check-files
+~~~
+
+The optional Windows SZ404 import check requires existing sister-repo Release
+libraries: mise exec -- python tools/check_sz404_import.py.
+The current file/export review build is build/app-files-windows.

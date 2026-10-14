@@ -129,6 +129,46 @@ MainComponent::MainComponent(bool enableAudioDevices) : audioPreview_(enableAudi
                               static_cast<juce::Component*>(&previewVolume_),
                               static_cast<juce::Component*>(&audioSettingsButton_) })
         addAndMakeVisible(component);
+    new_.onClick = [this] { newProject(); };
+    open_.onClick = [this] { openProject(); };
+    save_.onClick = [this] { saveProject(false); };
+    saveAs_.onClick = [this] { saveProject(true); };
+    export_.onClick = [this] { exportFile(); };
+    new_.setTooltip("New project (Ctrl/Cmd+N)");
+    open_.setTooltip("Open project (Ctrl/Cmd+O)");
+    save_.setTooltip("Save project (Ctrl/Cmd+S). Apply or cancel smoothing first.");
+    saveAs_.setTooltip("Save project under a new name (Ctrl/Cmd+Shift+S)");
+    export_.setTooltip("Export one authored cycle (Ctrl/Cmd+E). Preview gain and filtering are excluded.");
+    exportProfile_.addItem("SZ404", 1);
+    exportProfile_.addItem("Generic", 2);
+    exportProfile_.setSelectedId(1, juce::dontSendNotification);
+    exportProfile_.setTitle("Export profile");
+    exportProfile_.setTooltip("SZ404 exports a complete 1024-sample PCM16 copy. Generic retains the editing length.");
+    exportFormat_.addItemList({ "PCM16 WAV", "Float32 WAV", "PCM16 raw", "Float32 raw" }, 1);
+    exportFormat_.setSelectedId(1, juce::dontSendNotification);
+    exportFormat_.setTitle("Export encoding and container");
+    exportRate_.addItem("44.1 kHz", 44100);
+    exportRate_.addItem("48 kHz", 48000);
+    exportRate_.setSelectedId(44100, juce::dontSendNotification);
+    exportRate_.setTitle("WAV header rate");
+    exportRate_.setTooltip("WAV metadata only; independent of note pitch and audio device rate. Raw has no rate.");
+    exportProfile_.onChange = [this] {
+        const bool sz404 = exportProfile_.getSelectedId() == 1;
+        exportFormat_.setItemEnabled(2, !sz404);
+        exportFormat_.setItemEnabled(4, !sz404);
+        if (sz404 && !isPcm16(exportOptions().format))
+            exportFormat_.setSelectedId(1, juce::dontSendNotification);
+        fileStatus_.clear(); updateFileControls();
+    };
+    exportFormat_.onChange = [this] { fileStatus_.clear(); updateFileControls(); };
+    exportRate_.onChange = [this] { fileStatus_.clear(); updateFileControls(); };
+    exportFormat_.setItemEnabled(2, false);
+    exportFormat_.setItemEnabled(4, false);
+    for (auto* component : { static_cast<juce::Component*>(&new_), static_cast<juce::Component*>(&open_),
+        static_cast<juce::Component*>(&save_), static_cast<juce::Component*>(&saveAs_),
+        static_cast<juce::Component*>(&export_), static_cast<juce::Component*>(&exportProfile_),
+        static_cast<juce::Component*>(&exportFormat_), static_cast<juce::Component*>(&exportRate_) })
+        addAndMakeVisible(component);
     setSize(960, 640);
     syncControls();
     applyTheme();
@@ -138,6 +178,7 @@ MainComponent::MainComponent(bool enableAudioDevices) : audioPreview_(enableAudi
 MainComponent::~MainComponent() {
     stopTimer();
     audioSettings_.reset();
+    fileChooser_.reset();
     waveformView_.onChanged = {};
     setLookAndFeel(nullptr);
 }
@@ -152,11 +193,11 @@ void MainComponent::syncControls() {
     shape_.setSelectedId(presetId, juce::dontSendNotification);
     length_.setSelectedId(static_cast<int>(editor_.waveform().size()), juce::dontSendNotification);
     const bool smoothing = editor_.smoothingActive();
-    shape_.setEnabled(!smoothing);
-    length_.setEnabled(!smoothing);
-    clear_.setEnabled(!smoothing);
-    smooth_.setEnabled(!smoothing);
-    waveformView_.setEnabled(true);
+    shape_.setEnabled(!smoothing && !fileActionPending_);
+    length_.setEnabled(!smoothing && !fileActionPending_);
+    clear_.setEnabled(!smoothing && !fileActionPending_);
+    smooth_.setEnabled(!smoothing && !fileActionPending_);
+    waveformView_.setEnabled(!fileActionPending_);
     waveformView_.refreshViewport();
     waveformView_.setSelectionMode(smoothing && selectRegion_.getToggleState());
     waveformView_.setMouseCursor(waveformView_.selectionMode() ? juce::MouseCursor::CrosshairCursor
@@ -173,8 +214,9 @@ void MainComponent::syncControls() {
     smoothingStrength_.setVisible(smoothing);
     applySmoothing_.setVisible(smoothing);
     cancelSmoothing_.setVisible(smoothing);
-    undo_.setEnabled(editor_.canUndo());
-    redo_.setEnabled(editor_.canRedo());
+    undo_.setEnabled(!fileActionPending_ && editor_.canUndo());
+    redo_.setEnabled(!fileActionPending_ && editor_.canRedo());
+    updateFileControls();
     resized();
     if (!submittedWaveform_ || *submittedWaveform_ != editor_.waveform()) {
         submittedWaveform_ = editor_.waveform();
@@ -187,6 +229,7 @@ void MainComponent::syncControls() {
 void MainComponent::timerCallback() { updateAudioControls(); }
 void MainComponent::updateAudioControls() {
     play_.setButtonText(audioPreview_.playing() ? "Stop" : "Play");
+    play_.setTooltip("Play/stop (Space). " + audioPreview_.status());
     repaint(0, getHeight() - 66, getWidth(), 66);
 }
 void MainComponent::showAudioSettings() {
@@ -216,6 +259,7 @@ void MainComponent::updateSmoothingPreview() {
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+    if (fileActionPending_) return true;
     if (key.getKeyCode() == juce::KeyPress::spaceKey && !key.getModifiers().isAnyModifierKeyDown()) {
         play_.onClick(); return true;
     }
@@ -230,6 +274,12 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     const auto mods = key.getModifiers();
     if (!mods.isCommandDown() || mods.isAltDown()) return false;
     const int code = key.getKeyCode();
+    if (!editor_.smoothingActive()) {
+        if (code == 'n' || code == 'N') { newProject(); return true; }
+        if (code == 'o' || code == 'O') { openProject(); return true; }
+        if (code == 's' || code == 'S') { saveProject(mods.isShiftDown()); return true; }
+        if (code == 'e' || code == 'E') { exportFile(); return true; }
+    }
     if ((code == 'z' || code == 'Z' || code == 'y' || code == 'Y')
         && waveformView_.cancelSelectionGesture()) return true;
     if (code == 'z' || code == 'Z') {
@@ -277,12 +327,13 @@ void MainComponent::paint(juce::Graphics& g) {
     const auto theme = themeFor(dark_);
     g.fillAll(theme.background);
     g.setColour(theme.text);
-    g.setFont(juce::FontOptions(26.0f));
-    g.drawText("Wavetable Designer", 32, 24, getWidth() - 220, 36, juce::Justification::left);
+    g.setFont(juce::FontOptions(getWidth() < 800 ? 22.0f : 26.0f));
+    g.drawText("Wavetable Designer", 32, 24, getWidth() - 396, 36, juce::Justification::left);
     g.setColour(theme.muted);
     g.setFont(juce::FontOptions(15.0f));
-    g.drawText("Waveform", 32, 78, 172, 20, juce::Justification::left);
-    g.drawText("Zoom", getWidth() - 264, 78, 48, 20, juce::Justification::left);
+    const auto name = (projectFile_ == juce::File() ? juce::String("Untitled") : projectFile_.getFileName())
+        + (documentDirty() ? " *" : "");
+    g.drawText(name, 356, 76, getWidth() - 388, 24, juce::Justification::left);
     if (editor_.smoothingActive()) {
         g.drawText("Smoothness", 228, 183, 88, 24, juce::Justification::left);
         if (selectRegion_.getToggleState()) {
@@ -294,15 +345,19 @@ void MainComponent::paint(juce::Graphics& g) {
         }
     }
     g.drawText("Volume", 284, getHeight() - 99, 52, 26, juce::Justification::left);
-    g.drawText("Cycle", getWidth() - 268, getHeight() - 58, 48, 24, juce::Justification::left);
-    g.drawText(audioError_.isNotEmpty() ? audioError_ : audioPreview_.status(),
-        32, getHeight() - 56, getWidth() - 328, 24, juce::Justification::left);
+    g.setFont(juce::FontOptions(12.0f));
+    const auto audioStatus = audioPreview_.status();
+    const auto summary = fileStatus_.isNotEmpty() && juce::Time::currentTimeMillis() < fileStatusUntil_
+        ? fileStatus_ + " | " + exportSummary() : exportSummary();
+    const bool audioFailed = audioStatus.startsWith("Unable") || audioStatus.startsWith("Audio output stopped");
+    g.drawText(audioError_.isNotEmpty() ? audioError_ : audioFailed ? audioStatus : summary,
+        32, getHeight() - 26, getWidth() - 64, 22, juce::Justification::left);
 }
 
 void MainComponent::resized() {
     themeButton_.setBounds(getWidth() - 160, 28, 128, 34);
     shape_.setBounds(32, 104, 172, 36);
-    zoom_.setBounds(getWidth() - 212, 76, 180, 24);
+    zoom_.setBounds(getWidth() - 348, 28, 172, 34);
     selectRegion_.setBounds(32, 148, 132, 28);
     preserveEdges_.setBounds(228, 148, 144, 28);
     clearSelection_.setBounds(152, 180, 52, 28);
@@ -316,7 +371,15 @@ void MainComponent::resized() {
     applySmoothing_.setBounds(412, 104, 80, 36);
     cancelSmoothing_.setBounds(504, 104, 104, 36);
     // Editing and persistence live above the canvas; transport and export below.
-    length_.setBounds(getWidth() - 212, getHeight() - 64, 180, 36);
+    new_.setBounds(32, 72, 60, 28);
+    open_.setBounds(100, 72, 72, 28);
+    save_.setBounds(180, 72, 64, 28);
+    saveAs_.setBounds(252, 72, 88, 28);
+    exportProfile_.setBounds(32, getHeight() - 64, 100, 32);
+    exportFormat_.setBounds(140, getHeight() - 64, 134, 32);
+    exportRate_.setBounds(282, getHeight() - 64, 86, 32);
+    length_.setBounds(getWidth() - 264, getHeight() - 64, 136, 32);
+    export_.setBounds(getWidth() - 120, getHeight() - 64, 88, 32);
     play_.setBounds(32, getHeight() - 102, 80, 32);
     note_.setBounds(128, getHeight() - 102, 140, 32);
     previewVolume_.setBounds(342, getHeight() - 102, getWidth() - 530, 32);

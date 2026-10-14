@@ -1,9 +1,10 @@
 # Wavetable Designer: implementation plan
 
-Status: C++20 with native JUCE selected; scaffold, freehand drawing and smoothing implemented on
-feat/wavetable-designer-scaffold; audio preview is implemented for Windows review. Windows/macOS, lengths, preview and persistence
-are agreed. Export profiles below are the implementation defaults for compatibility.
-Date: 2026-10-13.
+Status: C++20/native JUCE editor, smoothing, audio preview and project save/open/export
+implemented for Windows review. main is the GitHub integration/default branch.
+Current milestone branch: feat/project-files-and-export. Native macOS validation
+remains outstanding.
+Date: 2026-10-14.
 Source of product intent: [README](../README.md).
 
 ## Product intent and MVP
@@ -235,11 +236,11 @@ presets prevent toggling one CMake cache between incompatible configurations.
    Completion: skipped/reversed strokes and boundary smoothing are verified;
    slider adjustments do not accumulate and undo restores exact prior samples.
 5. Implemented audio preview and device settings on Windows (moved forward at
-   the user's request); user audition and native macOS checks remain.
+   the user's request); Windows user audition passed; native macOS checks remain.
    Completion: offline checks verify note frequency, wrapping, update transitions,
    callback memory behavior and harmonic limiting; real output callbacks and
    manual play-stop/editing checks show stable output.
-6. Implement project save/open and export.
+6. Implemented project save/open and export for Windows review.
    Completion: project round-trip restores authored data. An independent reader
    verifies WAV format/rate/frame count, raw byte count/endianness and sample
    agreement. Verify SZ404 whole-cycle resampling, quantization and actual WAV/raw
@@ -600,3 +601,55 @@ Review build: build/app-audio-preview-windows.
 The user confirmed playback works and approved a commit and PR. Audio changes are
 on feat/audio-preview; the PR targets the current default branch,
 feat/wavetable-designer-scaffold. Existing live sessions remain open.
+
+## Main branch and project/export milestone (2026-10-14)
+
+Audio PR #1 was merged as db4684c. The user requested correcting the repository
+default; main was created at that merged commit, pushed, selected as GitHub default
+and checked out locally tracking origin/main. Existing feature branches were
+retained. New work starts on feat/project-files-and-export.
+
+Implemented New/Open/Save/Save As above the canvas and profile/format/rate/Export
+below it, preserving canvas height and cycle length in the footer. Zoom moved into
+the header alongside theme. The native UI fits 640x480 in both themes. File
+shortcuts follow Ctrl/Cmd conventions; New/Open/Quit guard unsaved work. Pending
+smoothing must be applied/cancelled before save/export, with a separate close
+prompt for that preview. Dialog callbacks guard lifetime and pause editing.
+
+The version-1 .wtd JSON contract restores exact authored float32 samples, preset
+identity and inclusive selection. Open fully validates before replacement, stops
+preview and resets history/view; Save retains history. Dirty state follows a
+saved checkpoint and can become clean again through Undo. Failed/cancelled file
+operations leave the drawing/checkpoint intact. Writes use a checked sibling
+temporary followed by replacement. Preview, theme/output/export settings and undo
+history remain session-only; automatic recovery and preference persistence are
+later refinements. See project-format.md for the complete contract.
+
+Portable Export writes mono PCM16/float32 RIFF WAV and explicit little-endian raw.
+44.1/48 kHz is WAV metadata only; there is no rate field for raw. Float WAV includes
+a fact frame-count chunk. PCM uses symmetric lround(v*32767), while float retains
+bits. No export normalization, smoothing, seam repair, gain or monitor filtering
+is applied. SZ404 periodically resamples a separate complete cycle to 1024 when
+needed and displays the conversion. Generic retains the authored count.
+
+Windows verification passed 62 core cases / 158,092 assertions. Native regression
+covers both lengths and 640x480, exact JSON round trips (including signed zero and
+subnormal samples), invalid/future/malformed files, untouched document/history on
+Open failure, checkpoint/Undo behavior, smoothing file-operation guards, keyboard
+Save/New, locked-target failure preserving the existing file and real exports.
+Dark/light file-control snapshots were visually inspected.
+
+NumPy/libsndfile independently verified all 24 profile/container/encoding/rate/
+length combinations, comparing every sample against saved authored projects.
+The optional check_sz404_import.py harness links the existing Windows Release
+SZ404 processor libraries without modifying or building the sister checkout.
+All 12 actual loadWavetableFile cases passed: SZ404 PCM16 WAV/raw at both lengths/
+rates plus generic float WAV. It checks the consumer's second PCM WAV quantization
+and generic 2048 WAV truncation; the SZ404 profile avoids that truncation.
+
+Review build: build/app-files-windows, preserving existing live drawing sessions.
+The user approved the Windows file/export changes and requested a commit and PR
+against main. Native macOS runtime/chooser/device validation remains outstanding.
+The next planned stage is the final UI/keyboard/theme/error refinement pass and
+platform validation. Preference persistence and automatic recovery remain optional
+later refinements; the agreed Windows MVP feature set is implemented.
