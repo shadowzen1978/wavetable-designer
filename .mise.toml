@@ -34,3 +34,7 @@ run = "python tools/dev.py smoke"
 [tasks.check-exports]
 description = "Inspect a WAV or raw file independently; pass a path and expected format"
 run = "uv run --locked python tools/check_export.py"
+
+[tasks.audio-check]
+description = "Build and run a short low-volume output-device check"
+run = "python tools/dev.py audio-check"

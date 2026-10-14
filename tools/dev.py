@@ -50,7 +50,7 @@ def execute(args: list[str], env: dict[str, str], **kwargs) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "build-core", "test", "run", "smoke"))
+    parser.add_argument("action", choices=("build", "build-core", "test", "run", "smoke", "audio-check"))
     parser.add_argument("--build-dir", type=Path, help="Use a separate build folder under build/ for review without closing the current app")
     args = parser.parse_args()
     host = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}.get(platform.system())
@@ -81,12 +81,13 @@ def main() -> None:
     execute(["cmake", "--build", str(build_dir), "--parallel", "4"], env)
     if args.action == "test":
         execute(["ctest", "--test-dir", str(build_dir), "--output-on-failure"], env)
-    if args.action in ("run", "smoke"):
+    if args.action in ("run", "smoke", "audio-check"):
         artefacts = build_dir / "WavetableDesigner_artefacts" / "Release"
         executable = (artefacts / "Wavetable Designer.exe") if host == "windows" else (
             artefacts / "Wavetable Designer.app/Contents/MacOS/Wavetable Designer")
-        if args.action == "smoke":
-            execute([str(executable), "--smoke-test"], env, timeout=20)
+        if args.action in ("smoke", "audio-check"):
+            option = "--smoke-test" if args.action == "smoke" else "--audio-device-check"
+            execute([str(executable), option], env, timeout=30)
         elif host == "macos":
             execute(["open", str(artefacts / "Wavetable Designer.app")], env)
         else:

@@ -24,8 +24,8 @@ Light mode and dark mode themes are a must with the dark mode theme as a default
 
 The implementation is a native C++20/JUCE GUI application with freehand drawing,
 undo/redo, periodic smoothing, sine/triangle/saw/square/flat starting shapes, and
-dark/light themes. Cycles contain 1024 or 2048 samples. Export, project persistence
-and audio preview are upcoming stages.
+dark/light themes and musical audio preview. Cycles contain 1024 or 2048 samples.
+Export and project persistence are upcoming stages.
 
 ### Drawing
 
@@ -98,6 +98,24 @@ gentle-curve limit; the Edge angle slider applies when Preserve edges is enabled
 Small intentional wiggles within that tolerance may be cleaned up too; compare
 the preview before Apply. Cancel and Undo retain their exact restoration behavior.
 
+### Audio preview
+
+Press Play below the canvas, or Space while the canvas has focus. The note menu
+covers C1–C8 and starts at A4 (440 Hz). Volume starts at 20%; it controls listening
+level independently of the waveform. Play becomes Stop while sounding.
+
+Drawing, presets, undo/redo, length changes and smoothing previews update playback
+live. Start/stop and volume changes fade over 20 ms; note/table changes crossfade
+over 10 ms. Audio settings selects the output device and exposes rate/buffer options
+under Advanced. Device restarts stop playback; press Play again afterward.
+No audio input or MIDI input is opened. Startup and the ordinary smoke checks are silent.
+
+Preview uses harmonic-limited copies selected for the note and device sample rate.
+The monitor copy removes DC and scales reconstruction overshoot without boosting
+quiet waveforms. Authored/project/export samples stay unchanged. Playback defaults
+to the system output when Play or Audio settings is first used; settings are
+currently session-only.
+
 ### Horizontal zoom
 
 Use the menu above the right side of the grid for Whole cycle, 2x–64x zoom, or
@@ -137,9 +155,9 @@ mise run smoke
 mise run check-exports -- path/to/cycle.wav --samples 1024 --encoding pcm16 --rate 44100
 ~~~
 
-The smoke command runs without opening a visible window, renders both themes to
+The smoke command disables physical audio, runs without opening a visible window, and renders both themes to
 build/gui-smoke/, exercises drawing/undo/resize handlers at both sample lengths and
-the minimum window size, verifies whole-cycle/regional smoothing, adjustable selection gestures, zoomed sample drawing and preview controls, and exits. The export checker supports PCM16/float32 WAV and raw;
+the minimum window size, verifies whole-cycle/regional smoothing, adjustable selection gestures, zoomed sample drawing, preview controls and offline audio/transport, and exits. The export checker supports PCM16/float32 WAV and raw;
 raw files have no sample-rate metadata, so omit --rate for them.
 
 Use a separate review build folder to try changes while keeping an existing drawing
@@ -152,3 +170,14 @@ mise run smoke -- --build-dir build/review
 
 Review builds reuse already-fetched dependency sources when available and keep
 compiled output/CMake caches separate. Choose separate folders for app/core modes.
+
+To verify a real output device, run:
+
+~~~sh
+mise run audio-check -- --build-dir build/audio-review
+~~~
+
+This plays a brief quiet A4 tone, checks output callbacks, and writes
+build/audio-check/device-check.json. It verifies driver callback operation, not
+a microphone/loopback recording or listening quality. Native macOS checks remain
+outstanding; the Windows review build is build/app-audio-preview-windows.
