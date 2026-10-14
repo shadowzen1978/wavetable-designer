@@ -10,19 +10,21 @@ SZ404 in ts404-remake is the priority export consumer. Browser mockups and a lat
 browser version are expected; retain a portable core and a versioned data contract.
 
 The current phase is editor implementation. Freehand drawing, stroke undo/redo,
-Clear/presets, periodic length changes and whole-cycle/regional smoothing are implemented. Persistence,
-export and audio preview are upcoming stages.
+Clear/presets, periodic length changes, whole-cycle/regional smoothing and audio
+preview are implemented. Persistence and export are upcoming stages.
 The primary UI is the drawing box; dark is default and light is required.
 Place drawing and persistence controls above the canvas, and transport/export
 controls below it. Cycle length belongs with the bottom export controls.
 
 ## Layout and dependencies
 
-- src/core is JUCE-free C++: Waveform holds sample data; EditorModel owns gestures,
+- src/core is JUCE-free C++: PreviewBank/PreviewEngine provide FFT-limited monitor
+  tables, bounded publication and the oscillator. Waveform holds sample data; EditorModel owns gestures,
   preset identity, and bounded undo/redo snapshots. Length changes resample the
   current curve; they must not regenerate a starting shape or discard edits.
-- src/app is the JUCE GUI/lifecycle; future audio and file adapters belong under
-  src/audio and src/io when implemented. Do not add empty placeholder subsystems.
+- src/app is the JUCE GUI/lifecycle. src/audio/AudioPreview adapts to JUCE output
+  devices and builds immutable tables on a worker. Future file adapters belong
+  under src/io when implemented. Do not add empty placeholder subsystems.
 - tests is the headless doctest suite; core-only configure must not fetch JUCE.
 - tools/dev.py is the cross-platform build driver. Windows MSVC setup uses vswhere
   and tools/msvc-env.cmd. CMake presets keep app/core/platform caches separate.
@@ -44,8 +46,12 @@ If a shell has not activated mise, these tasks still provide the selected tools.
   Keep app/core review directories separate; dependency source overrides are local.
 - mise run smoke: build and run hidden GUI initialization/theme snapshot checks
   plus synthetic canvas gestures, undo/redo/clear/resize/shortcuts and smoothing
-  preview/apply/cancel, selection gestures and boundary isolation verification.
-  Snapshots are written under build/gui-smoke/ for visual inspection.
+  preview/apply/cancel, selection gestures, boundary isolation and offline audio.
+  Physical devices are disabled in this mode. Snapshots are written under
+  build/gui-smoke/ for visual inspection.
+- mise run audio-check: short low-volume system-output check; report under
+  build/audio-check/device-check.json. This emits audio and checks callbacks, not
+  acoustic/loopback quality. Use an isolated --build-dir for review.
 - mise run check-exports -- <file> --samples 1024 --encoding pcm16 --rate 44100:
   independent mono WAV validation. Omit --rate for raw files.
 
@@ -102,3 +108,23 @@ but not yet run on a Mac; do not claim Windows validation verifies macOS behavio
   Keep preview gain/harmonic limiting independent from exported authored samples.
 - Keep allocation, file I/O, blocking locks and memory reclamation out of audio
   callbacks. Verify ownership and click-free table publication when preview lands.
+
+## Audio preview contract
+
+- Playback comes before persistence/export at the user's request. Footer controls
+  are Play/Stop, C1–C8 note, preview volume, output settings and cycle length.
+  Space toggles transport from the canvas. Startup is silent; devices open lazily
+  with zero input channels. Device restarts stop playback.
+- PreviewBank builds 2048-point Fourier monitor tables with 1023 >> level maximum
+  harmonics (10 levels), no DC, and a shared overshoot-only scale. Source samples
+  must stay exact. Choose a level with highest partial <= 0.45 * device rate;
+  mute notes above that guard. Export header rate is independent of pitch.
+- PreviewEngine has four preallocated slots and a single producer/consumer mailbox.
+  Producer CAS claims free slots; publish exchanges the newest ready index.
+  Consumer holds current/previous banks through a 10 ms crossfade; only then marks
+  the old slot free. Replaced ready banks are freed by the producer. Callback
+  controls/counters use lock-free atomics, with 20 ms gain ramps and max gain 0.25.
+  No callback allocation, locks, shared_ptr destruction or dynamic bank reclamation.
+- Main snapshots changed samples only. The worker coalesces pending edits, builds
+  off the audio thread and publishes complete banks. GUI smoke uses the same engine
+  and worker with physical audio disabled. Real-device verification is separate.

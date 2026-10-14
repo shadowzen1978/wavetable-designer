@@ -3,9 +3,25 @@
 namespace wtd {
 namespace {
 constexpr Shape shapes[] { Shape::sine, Shape::triangle, Shape::saw, Shape::square, Shape::flat };
+class AudioSettingsWindow final : public juce::DialogWindow {
+public:
+    AudioSettingsWindow(juce::AudioDeviceManager& manager, juce::LookAndFeel& look, juce::Colour background)
+        : DialogWindow("Audio settings", background, true) {
+        setLookAndFeel(&look);
+        setUsingNativeTitleBar(true);
+        auto* selector = new juce::AudioDeviceSelectorComponent(manager, 0, 0, 0, 2, false, false, true, true);
+        selector->setSize(560, 380);
+        setContentOwned(selector, true);
+        setResizable(true, false);
+        setResizeLimits(480, 320, 900, 650);
+        centreWithSize(560, 400);
+    }
+    ~AudioSettingsWindow() override { setLookAndFeel(nullptr); }
+    void closeButtonPressed() override { setVisible(false); }
+};
 }
 
-MainComponent::MainComponent() {
+MainComponent::MainComponent(bool enableAudioDevices) : audioPreview_(enableAudioDevices) {
     setLookAndFeel(&lookAndFeel_);
     setWantsKeyboardFocus(true);
     shape_.addItemList({ "Sine", "Triangle", "Saw", "Square", "Flat", "Custom" }, 1);
@@ -77,6 +93,27 @@ MainComponent::MainComponent() {
                               static_cast<juce::Component*>(&applySmoothing_),
                               static_cast<juce::Component*>(&cancelSmoothing_) })
         addChildComponent(component);
+    play_.onClick = [this] {
+        audioError_ = audioPreview_.setPlaying(!audioPreview_.playing());
+        updateAudioControls();
+    };
+    play_.setTooltip("Play or stop the current waveform (Space)");
+    static const char* noteNames[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    for (int midi = 24; midi <= 108; ++midi)
+        note_.addItem(juce::String(noteNames[midi % 12]) + juce::String(midi / 12 - 1) + "  "
+            + juce::String(noteFrequency(midi), 0) + " Hz", midi + 1);
+    note_.setSelectedId(70, juce::dontSendNotification);
+    note_.setTitle("Preview note");
+    note_.onChange = [this] { audioPreview_.setNote(note_.getSelectedId() - 1); };
+    previewVolume_.setSliderStyle(juce::Slider::LinearHorizontal);
+    previewVolume_.setTextBoxStyle(juce::Slider::TextBoxRight, true, 42, 26);
+    previewVolume_.setRange(0.0, 100.0, 1.0);
+    previewVolume_.setValue(20.0, juce::dontSendNotification);
+    previewVolume_.setTextValueSuffix("%");
+    previewVolume_.setName("Preview volume");
+    previewVolume_.setTooltip("Listening volume only; authored and exported samples retain their amplitudes");
+    previewVolume_.onValueChange = [this] { audioPreview_.setVolume(static_cast<float>(previewVolume_.getValue() / 100.0)); };
+    audioSettingsButton_.onClick = [this] { showAudioSettings(); };
     themeButton_.onClick = [this] { dark_ = !dark_; applyTheme(); };
     for (auto* component : { static_cast<juce::Component*>(&shape_),
                               static_cast<juce::Component*>(&length_),
@@ -86,14 +123,21 @@ MainComponent::MainComponent() {
                               static_cast<juce::Component*>(&smooth_),
                               static_cast<juce::Component*>(&zoom_),
                               static_cast<juce::Component*>(&themeButton_),
-                              static_cast<juce::Component*>(&waveformView_) })
+                              static_cast<juce::Component*>(&waveformView_),
+                              static_cast<juce::Component*>(&play_),
+                              static_cast<juce::Component*>(&note_),
+                              static_cast<juce::Component*>(&previewVolume_),
+                              static_cast<juce::Component*>(&audioSettingsButton_) })
         addAndMakeVisible(component);
     setSize(960, 640);
     syncControls();
     applyTheme();
+    startTimerHz(10);
 }
 
 MainComponent::~MainComponent() {
+    stopTimer();
+    audioSettings_.reset();
     waveformView_.onChanged = {};
     setLookAndFeel(nullptr);
 }
@@ -132,10 +176,27 @@ void MainComponent::syncControls() {
     undo_.setEnabled(editor_.canUndo());
     redo_.setEnabled(editor_.canRedo());
     resized();
+    if (!submittedWaveform_ || *submittedWaveform_ != editor_.waveform()) {
+        submittedWaveform_ = editor_.waveform();
+        audioPreview_.requestWaveform(*submittedWaveform_);
+    }
     waveformView_.repaint();
     repaint();
 }
 
+void MainComponent::timerCallback() { updateAudioControls(); }
+void MainComponent::updateAudioControls() {
+    play_.setButtonText(audioPreview_.playing() ? "Stop" : "Play");
+    repaint(0, getHeight() - 66, getWidth(), 66);
+}
+void MainComponent::showAudioSettings() {
+    audioError_ = audioPreview_.ensureDevice();
+    if (!audioSettings_) audioSettings_ = std::make_unique<AudioSettingsWindow>(
+        audioPreview_.deviceManager(), lookAndFeel_, themeFor(dark_).panel);
+    audioSettings_->setVisible(true);
+    audioSettings_->toFront(true);
+    updateAudioControls();
+}
 void MainComponent::startSmoothing() {
     selectRegion_.setToggleState(editor_.selection().has_value(), juce::dontSendNotification);
     editor_.beginSmoothing();
@@ -155,6 +216,9 @@ void MainComponent::updateSmoothingPreview() {
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+    if (key.getKeyCode() == juce::KeyPress::spaceKey && !key.getModifiers().isAnyModifierKeyDown()) {
+        play_.onClick(); return true;
+    }
     if (editor_.smoothingActive() && key.getKeyCode() == juce::KeyPress::escapeKey) {
         if (!waveformView_.cancelSelectionGesture()) { editor_.cancelSmoothing(); syncControls(); }
         return true;
@@ -180,6 +244,9 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
 
 void MainComponent::applyTheme() {
     const auto theme = themeFor(dark_);
+    lookAndFeel_.setColour(juce::Label::textColourId, theme.text);
+    lookAndFeel_.setColour(juce::ListBox::backgroundColourId, theme.panel);
+    lookAndFeel_.setColour(juce::ListBox::textColourId, theme.text);
     lookAndFeel_.setColour(juce::ComboBox::backgroundColourId, theme.panel);
     lookAndFeel_.setColour(juce::ComboBox::textColourId, theme.text);
     lookAndFeel_.setColour(juce::ComboBox::outlineColourId, theme.grid);
@@ -201,6 +268,7 @@ void MainComponent::applyTheme() {
     lookAndFeel_.setColour(juce::Slider::textBoxOutlineColourId, theme.grid);
     themeButton_.setButtonText(dark_ ? "Light theme" : "Dark theme");
     waveformView_.setDark(dark_);
+    if (audioSettings_) { audioSettings_->setBackgroundColour(theme.panel); audioSettings_->sendLookAndFeelChange(); }
     sendLookAndFeelChange();
     repaint();
 }
@@ -225,13 +293,10 @@ void MainComponent::paint(juce::Graphics& g) {
             g.drawText(label, 36, 183, 108, 24, juce::Justification::left);
         }
     }
-    g.drawText("Cycle length", getWidth() - 212, getHeight() - 92, 180, 20,
-               juce::Justification::left);
-    const auto status = waveformView_.selectionMode()
-        ? juce::String("Drag a range; drag either boundary to adjust")
-        : juce::String("One cycle  /  ") + juce::String(static_cast<int>(editor_.waveform().size())) + " samples";
-    g.drawText(status,
-               32, getHeight() - 54, getWidth() - 276, 24, juce::Justification::left);
+    g.drawText("Volume", 284, getHeight() - 99, 52, 26, juce::Justification::left);
+    g.drawText("Cycle", getWidth() - 268, getHeight() - 58, 48, 24, juce::Justification::left);
+    g.drawText(audioError_.isNotEmpty() ? audioError_ : audioPreview_.status(),
+        32, getHeight() - 56, getWidth() - 328, 24, juce::Justification::left);
 }
 
 void MainComponent::resized() {
@@ -252,6 +317,10 @@ void MainComponent::resized() {
     cancelSmoothing_.setBounds(504, 104, 104, 36);
     // Editing and persistence live above the canvas; transport and export below.
     length_.setBounds(getWidth() - 212, getHeight() - 64, 180, 36);
+    play_.setBounds(32, getHeight() - 102, 80, 32);
+    note_.setBounds(128, getHeight() - 102, 140, 32);
+    previewVolume_.setBounds(342, getHeight() - 102, getWidth() - 530, 32);
+    audioSettingsButton_.setBounds(getWidth() - 164, getHeight() - 102, 132, 32);
     const int top = editor_.smoothingActive() ? 252 : 164;
     waveformView_.setBounds(32, top, getWidth() - 64, getHeight() - top - 112);
 }

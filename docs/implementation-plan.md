@@ -1,7 +1,7 @@
 # Wavetable Designer: implementation plan
 
 Status: C++20 with native JUCE selected; scaffold, freehand drawing and smoothing implemented on
-feat/wavetable-designer-scaffold. Windows/macOS, lengths, preview and persistence
+feat/wavetable-designer-scaffold; audio preview is implemented for Windows review. Windows/macOS, lengths, preview and persistence
 are agreed. Export profiles below are the implementation defaults for compatibility.
 Date: 2026-10-13.
 Source of product intent: [README](../README.md).
@@ -234,14 +234,16 @@ presets prevent toggling one CMake cache between incompatible configurations.
 4. Drawing/model/undo/presets and periodic smoothing implemented.
    Completion: skipped/reversed strokes and boundary smoothing are verified;
    slider adjustments do not accumulate and undo restores exact prior samples.
-5. Implement export and project save/open.
-   Completion: independent reader verifies WAV format/rate/frame count, raw byte
-   count/endianness, and sample agreement; project round-trip restores authored data.
-   Verify SZ404 imports a whole cycle; test profile resampling, quantization and
-   actual WAV/raw import paths with golden cases.
-6. Implement preview and device settings.
+5. Implemented audio preview and device settings on Windows (moved forward at
+   the user's request); user audition and native macOS checks remain.
    Completion: offline checks verify note frequency, wrapping, update transitions,
-   and harmonic limiting; manual device/play-stop/editing checks show stable output.
+   callback memory behavior and harmonic limiting; real output callbacks and
+   manual play-stop/editing checks show stable output.
+6. Implement project save/open and export.
+   Completion: project round-trip restores authored data. An independent reader
+   verifies WAV format/rate/frame count, raw byte count/endianness and sample
+   agreement. Verify SZ404 whole-cycle resampling, quantization and actual WAV/raw
+   import paths with golden cases.
 7. Refine layout, keyboard commands, themes and errors. Smoke-test all selected
    platforms. Record platform results separately; buildability is not release QA.
 
@@ -365,7 +367,8 @@ Native macOS verification remains outstanding.
 Review build: build/app-regional-smoothing-windows. Existing app sessions are not
 closed during this build. No new commit was made for this feedback refinement.
 
-Next: versioned project save/open and WAV/raw export, followed by audio preview.
+At this stage the next milestone was save/open and export; the user subsequently
+moved audio preview ahead of them (see the audio milestone below).
 
 ## Contextual selection and horizontal zoom (2026-10-13)
 
@@ -538,3 +541,62 @@ edge preservation, independent jitter cleanup, native regression checks, and
 isolated review builds that preserve unsaved sessions. Windows validation passed
 49 core cases / 84,401 assertions and the native GUI/theme suite; macOS validation
 remains outstanding. Generated build output and snapshots stay ignored.
+
+## Audio preview milestone (2026-10-13)
+
+The user approved implementing playback before file persistence/export. The
+native footer adds Play/Stop, C1–C8 notes (A4/440 Hz by default), independent
+volume (20% initially), Audio settings and the existing cycle length. Space toggles
+transport from the canvas. No device is opened at startup; Play/Audio settings
+lazily opens the system output with zero inputs. Device type/output and advanced
+rate/buffer settings use JUCE's native selector. Device restarts stop transport.
+Settings remain session-only until the persistence milestone.
+
+Portable PreviewBank uses a radix-2 FFT on an immutable authored snapshot and
+constructs ten 2048-point tables, with highest harmonics 1023, 511, ..., 3, 1.
+Playback chooses the richest level below 0.45 * device sample rate / note frequency.
+The oscillator wraps phase using note frequency/device rate and linearly reads the
+table. Notes above the fundamental guard are silent. Preview removes DC and scales
+reconstruction overshoot only; authored data is unchanged and quiet waveforms
+are not boosted. Output is mono duplicated into enabled output channels, with
+maximum gain 0.25 times the volume setting.
+
+Publication ownership was reviewed before implementing the callback: four fixed
+banks cover two consumer voices, one ready bank and a producer write. A CAS claims
+only free slots. The producer copies a finished bank, release-publishes its index
+and reclaims any replaced ready slot. The consumer acquire-takes that index only
+between crossfades and holds old/new voices for 10 ms, then release-frees the old
+bank. Pitch swaps retain the old voice's frequency/table while fading to a new
+voice, preserving each voice's harmonic limit. The callback has no allocations,
+blocking locks, shared_ptr destruction, file I/O or dynamic bank reclamation.
+Sample-rate restarts reset ramps/phase while retaining the current bank safely.
+
+A worker coalesces pending GUI snapshots and builds outside the audio callback.
+Only numerical waveform changes publish, including live drawing, undo, resampling
+and pending smoothing/Cancel. Control values are lock-free atomics. Transport and
+volume use 20 ms ramps; note/table changes use 10 ms crossfades. Worker exceptions
+and output errors surface in the footer. A settings window is owned by the editor
+and destroyed before its referenced device manager/look-and-feel.
+
+Verification: 56 core cases / 142,576 assertions passed, including A4 at both cycle
+lengths and 44.1/48/96 kHz, spectral exclusion/DC/bounds, low-rate high-note muting,
+null outputs/stereo duplication, fade-to-zero, pitch swaps, sample-rate restarts,
+zero allocations/deallocations through callback updates and overlapping producer/
+consumer publication. Core-only builds remain JUCE-free. JUCE audio_utils supplies
+the selector and native output adapter; ASIO SDK support is disabled.
+
+Native smoke uses an offline device mode and never emits audio. The separate
+audio-check command emits a 1.5-second quiet A4 tone and reports driver rate,
+buffer size, rendered frames and peak in build/audio-check/device-check.json.
+It checks callback operation, not acoustic output quality. Windows native smoke
+passed offline transport, note/volume changes, live smoothing/Cancel, Clear/undo,
+worker revision coalescing and source restoration at both lengths and 640x480.
+Both editor themes and output-selector snapshots were visually inspected; smoke
+also asserts no physical device opens. The separate Realtek Speakers check passed
+at 48 kHz / 480 frames per buffer, with 65,280 rendered frames and peak 0.02.
+These verify the code and driver callback path. The user confirmed playback works
+on Windows; native macOS validation remains outstanding. git diff --check passed.
+Review build: build/app-audio-preview-windows.
+The user confirmed playback works and approved a commit and PR. Audio changes are
+on feat/audio-preview; the PR targets the current default branch,
+feat/wavetable-designer-scaffold. Existing live sessions remain open.
