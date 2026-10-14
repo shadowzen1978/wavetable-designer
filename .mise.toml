@@ -38,3 +38,7 @@ run = "uv run --locked python tools/check_export.py"
 [tasks.audio-check]
 description = "Build and run a short low-volume output-device check"
 run = "python tools/dev.py audio-check"
+
+[tasks.check-files]
+description = "Independently verify project/export fixtures from the native smoke run"
+run = "uv run --locked python tools/check_file_fixtures.py"

@@ -12,7 +12,7 @@ include(FetchContent)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 add_library(wavetable_core STATIC src/core/Waveform.cpp src/core/EditorModel.cpp
-    src/core/PreviewBank.cpp src/core/PreviewEngine.cpp)
+    src/core/PreviewBank.cpp src/core/PreviewEngine.cpp src/io/Export.cpp)
 target_include_directories(wavetable_core PUBLIC src)
 target_compile_options(wavetable_core PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->
@@ -24,7 +24,7 @@ if(BUILD_TESTING)
         # doctest 2.4.11, pinned to its exact revision.
         GIT_TAG ae7a13539fb71f270b87eb2e874fbac80bc8dda2)
     FetchContent_MakeAvailable(doctest)
-    add_executable(wavetable_tests tests/WaveformTests.cpp tests/EditorModelTests.cpp tests/SmoothingTests.cpp tests/RegionalSmoothingTests.cpp tests/HorizontalViewportTests.cpp tests/EdgeSmoothingTests.cpp tests/JitterTests.cpp tests/AudioPreviewTests.cpp)
+    add_executable(wavetable_tests tests/WaveformTests.cpp tests/EditorModelTests.cpp tests/SmoothingTests.cpp tests/RegionalSmoothingTests.cpp tests/HorizontalViewportTests.cpp tests/EdgeSmoothingTests.cpp tests/JitterTests.cpp tests/AudioPreviewTests.cpp tests/ExportTests.cpp)
     find_package(Threads REQUIRED)
     target_link_libraries(wavetable_tests PRIVATE wavetable_core doctest::doctest Threads::Threads)
     add_test(NAME waveform_contract COMMAND wavetable_tests)
@@ -41,6 +41,9 @@ if(WTD_BUILD_APP)
         COMPANY_NAME "Shadowzen Labs"
         BUNDLE_ID com.shadowzenlabs.wavetabledesigner)
     target_sources(WavetableDesigner PRIVATE
+        src/io/ProjectFile.cpp
+        src/app/FileCommands.cpp
+        src/app/FileSmokeCheck.cpp
         src/audio/AudioPreview.cpp
         src/app/AudioSmokeCheck.cpp
         src/app/Main.cpp

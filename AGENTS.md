@@ -11,7 +11,7 @@ browser version are expected; retain a portable core and a versioned data contra
 
 The current phase is editor implementation. Freehand drawing, stroke undo/redo,
 Clear/presets, periodic length changes, whole-cycle/regional smoothing and audio
-preview are implemented. Persistence and export are upcoming stages.
+preview are implemented. Versioned project save/open and WAV/raw export are implemented.
 The primary UI is the drawing box; dark is default and light is required.
 Place drawing and persistence controls above the canvas, and transport/export
 controls below it. Cycle length belongs with the bottom export controls.
@@ -23,8 +23,8 @@ controls below it. Cycle length belongs with the bottom export controls.
   preset identity, and bounded undo/redo snapshots. Length changes resample the
   current curve; they must not regenerate a starting shape or discard edits.
 - src/app is the JUCE GUI/lifecycle. src/audio/AudioPreview adapts to JUCE output
-  devices and builds immutable tables on a worker. Future file adapters belong
-  under src/io when implemented. Do not add empty placeholder subsystems.
+  devices and builds immutable tables on a worker. ProjectFile/Export file adapters belong
+  under src/io. Export is JUCE-free; JSON/chooser/file adapters use JUCE. Do not add empty placeholder subsystems.
 - tests is the headless doctest suite; core-only configure must not fetch JUCE.
 - tools/dev.py is the cross-platform build driver. Windows MSVC setup uses vswhere
   and tools/msvc-env.cmd. CMake presets keep app/core/platform caches separate.
@@ -53,7 +53,11 @@ If a shell has not activated mise, these tasks still provide the selected tools.
   build/audio-check/device-check.json. This emits audio and checks callbacks, not
   acoustic/loopback quality. Use an isolated --build-dir for review.
 - mise run check-exports -- <file> --samples 1024 --encoding pcm16 --rate 44100:
-  independent mono WAV validation. Omit --rate for raw files.
+  independent mono WAV validation. Omit --rate for raw files. Add --project/--profile
+  to check exact authored sample agreement.
+- mise run check-files: independently verify all 24 native smoke export fixtures.
+- mise exec -- python tools/check_sz404_import.py: optional Windows actual-import
+  check using existing sister-repo Release libraries; never builds/modifies that repo.
 
 Native Mac builds require Xcode command line tools. macOS presets are configured
 but not yet run on a Mac; do not claim Windows validation verifies macOS behavior.
@@ -128,3 +132,25 @@ but not yet run on a Mac; do not claim Windows validation verifies macOS behavio
 - Main snapshots changed samples only. The worker coalesces pending edits, builds
   off the audio thread and publishes complete banks. GUI smoke uses the same engine
   and worker with physical audio disabled. Real-device verification is separate.
+
+## Project and file contract
+
+- main is the GitHub default/integration branch; start new milestones on feature
+  branches. Do not commit/push unless the user requests it.
+- Read docs/project-format.md when changing project or export contracts.
+- Projects are version-1 UTF-8 JSON .wtd files. Preserve float32 samples, preset
+  identity and selection. Validate the whole file before editor replacement;
+  reject future versions, invalid types/counts/amplitudes/ranges and oversized JSON.
+- Open/New reset undo/redo and viewport and stop preview; Save retains history.
+  Compare document data to the saved checkpoint for dirty state, including Undo.
+- New/Open/Quit guard unsaved changes. Cancel or failed Save prevents document
+  replacement/quit. Closing a smoothing preview first asks Apply/Discard/Cancel.
+- File chooser callbacks must guard component lifetime. Freeze editing during
+  file dialogs. Save As/Export confirm overwrite after finalizing the extension.
+- Write to a sibling temporary file, verify write/flush, then replace the target.
+  Failure must not advance the saved checkpoint or mutate authored samples.
+- Do not save/export uncommitted smoothing previews. Settings remain session-only;
+  project persistence stores document data, not device configuration or history.
+- Export defaults to SZ404 PCM16 WAV/44.1 kHz. Offer generic PCM16/float32 WAV/raw.
+  Show exported count/encoding/rate or raw LE bytes and explicit resampling.
+  A float WAV contains a fact frame count. Quantize PCM with lround(v*32767).

@@ -39,6 +39,8 @@ public:
     bool resizeCycle(std::size_t sampleCount);
     bool undo();
     bool redo();
+    // New/Open replace the document and clear history; validate before changing state.
+    void loadDocument(Waveform waveform, std::optional<Shape> preset, std::optional<SampleRange> selection);
 
 private:
     struct State { Waveform waveform; std::optional<Shape> preset; std::optional<SampleRange> selection; };

@@ -14,19 +14,21 @@ public:
         if (audioCheck) {
             juce::Timer::callAfterDelay(150, [this] {
                 window_->checkAudio(juce::File::getCurrentWorkingDirectory().getChildFile("build/audio-check"),
-                    [this](bool passed) { setApplicationReturnValue(passed ? 0 : 1); systemRequestedQuit(); });
+                    [this](bool passed) { setApplicationReturnValue(passed ? 0 : 1); quit(); });
             });
         }
         if (smoke) {
             juce::Timer::callAfterDelay(150, [this] {
                 const auto directory = juce::File::getCurrentWorkingDirectory().getChildFile("build/gui-smoke");
                 setApplicationReturnValue(window_->writeSnapshots(directory) ? 0 : 1);
-                systemRequestedQuit();
+                quit();
             });
         }
     }
     void shutdown() override { window_.reset(); }
-    void systemRequestedQuit() override { quit(); }
+    void systemRequestedQuit() override {
+        if (window_) window_->requestQuit([this] { quit(); }); else quit();
+    }
     void anotherInstanceStarted(const juce::String&) override {}
 private:
     class Window final : public juce::DocumentWindow {
@@ -36,11 +38,13 @@ private:
             setUsingNativeTitleBar(true);
             content_ = new MainComponent(enableAudioDevices);
             setContentOwned(content_, true);
+            setName("Untitled - " + name);
             setResizable(true, false);
             setResizeLimits(640, 480, 2560, 1600);
             centreWithSize(getWidth(), getHeight());
             setVisible(visible);
         }
+        void requestQuit(std::function<void()> quit) { content_->requestQuit(std::move(quit)); }
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
         void checkAudio(const juce::File& directory, std::function<void(bool)> finished) {
             content_->runAudioDeviceCheck(directory, std::move(finished));
@@ -58,7 +62,7 @@ private:
                 if (!juce::PNGImageFormat().writeImageToStream(image, *stream)) return false;
             }
             return content_->runDrawingSmokeCheck(directory) && content_->runSmoothingSmokeCheck(directory)
-                && content_->runRegionalSmoothingSmokeCheck(directory) && content_->runEdgeSmoothingSmokeCheck(directory) && content_->runJitterSmokeCheck(directory) && content_->runAudioSmokeCheck(directory);
+                && content_->runRegionalSmoothingSmokeCheck(directory) && content_->runEdgeSmoothingSmokeCheck(directory) && content_->runJitterSmokeCheck(directory) && content_->runAudioSmokeCheck(directory) && content_->runFileSmokeCheck(directory);
         }
     private:
         MainComponent* content_ = nullptr; // Owned by DocumentWindow.

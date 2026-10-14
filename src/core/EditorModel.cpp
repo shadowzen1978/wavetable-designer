@@ -8,6 +8,17 @@ namespace wtd {
 EditorModel::EditorModel(std::size_t sampleCount)
     : state_ { Waveform(sampleCount), Shape::sine, std::nullopt } {}
 
+void EditorModel::loadDocument(Waveform waveform, std::optional<Shape> preset, std::optional<SampleRange> selection) {
+    if (selection && (selection->first > selection->last || selection->last >= waveform.size()))
+        throw std::out_of_range("Selection is outside the cycle");
+    if (preset && (static_cast<int>(*preset) < 0 || static_cast<int>(*preset) > 4))
+        throw std::invalid_argument("Unknown preset");
+    state_ = { std::move(waveform), preset, selection };
+    stroke_.reset(); smoothingBefore_.reset();
+    smoothingScope_ = SmoothingScope::wholeCycle;
+    undo_.clear(); redo_.clear();
+}
+
 EditorModel::Point EditorModel::pointFor(double phase, float amplitude) const {
     if (!std::isfinite(phase) || !std::isfinite(amplitude))
         throw std::invalid_argument("Stroke coordinates must be finite");
